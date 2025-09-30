@@ -2,7 +2,7 @@
 	(version 20250114)
 	(generator "eeschema")
 	(generator_version "9.0")
-	(uuid "5aa8a2e1-e7e9-493f-88f9-15ed7cf354a8")
+	(uuid "fd5d193d-6950-4a94-a0da-dcb79b67c914")
 	(paper "A4")
 	(lib_symbols
 		(symbol "BassingaLib_Inductors:SRP3212-3R3M"
