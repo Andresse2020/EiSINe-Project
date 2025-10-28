@@ -1,0 +1,1 @@
+# This fil e is part of Software XYZ.
