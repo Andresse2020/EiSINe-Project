@@ -3,25 +3,24 @@
 LPDControl (License Plate Detection Controller)
 -----------------------------------------------
 
-High-level ALPR detection orchestrator running in a background thread.
+High-level ALPR (License Plate Detection only, no OCR) controller.
 
 Responsibilities:
     - Pull ImageFrame objects from CameraService (non-blocking)
-    - Invoke YOLO detector via YoloDetectorService (Service Layer)
-    - (Future) Call ROIExtractionService for cropping
-    - (Future) Call PlatePreprocessService for image cleaning
-    - (Future) Call OCRService for plate text recognition
-    - Store results + processed debug frames thread-safe
-    - Provide a clean API for App & Debug Display
+    - Run YOLO detection through YoloDetectorService
+    - Run ROI extraction for plate cropping (optional)
+    - Run PlatePreprocessService (optional cleaning)
+    - Store detection results + processed debug frames thread-safe
 
-This controller MUST NOT:
+This controller DOES NOT:
+    - use an OCR system
     - depend on driver-level Frame objects (Interface layer)
     - contain ML logic
     - contain hardware logic
-    - perform heavy OpenCV processing
+    - perform heavy processing
 
-It orchestrates the ALPR pipeline:
-    Service → Control → (future services) → App
+Pipeline:
+    Service → Control → App
 """
 
 from __future__ import annotations
@@ -33,26 +32,13 @@ import cv2  # Only for lightweight debug overlays
 
 from Software.Service.camera_service import CameraService, ImageFrame
 from Software.Service.yolo_detector_service import YoloDetectorService
-# from Software.Service.roi_extraction_service import ROIExtractionService
-# from Software.Service.preprocess_service import PlatePreprocessService
-# from Software.Service.ocr_service import OCRService
+from Software.Service.roi_extraction_service import ROIExtractionService
+from Software.Service.plate_preprocess_service import PlatePreprocessService
 
 
 class LPDControl:
     """
-    High-level License Plate Detection controller.
-
-    The controller:
-        - retrieves ImageFrame objects from CameraService
-        - delegates detection to YoloDetectorService
-        - will delegate ROI extraction / preprocessing / OCR to dedicated services
-        - prepares a processed debug frame (optional)
-        - outputs structured detection results
-
-    It does NOT:
-        - know about camera drivers
-        - know about Interface.Frame
-        - implement any ML logic directly
+    High-level License Plate Detection controller (detection only, no OCR).
     """
 
     # ------------------------------------------------------------------
@@ -65,26 +51,25 @@ class LPDControl:
         self._running: bool = False
         self._thread: threading.Thread | None = None
 
-        # Shared outputs (thread-safe)
+        # Outputs shared with App layer
         self._latest_result: Optional[Any] = None
         self._latest_frame_processed: Optional[Any] = None
         self._lock = threading.Lock()
 
-        # Load YOLO model through a Service (not directly)
+        # YOLO detector (Service Layer)
         self._detector = YoloDetectorService(
             "Software/Service/ML_Models/license_plate_detector.pt"
         )
 
-        # Future ALPR services:
-        # self._roi_service = ROIExtractionService()
-        # self._preprocess_service = PlatePreprocessService()
-        # self._ocr_service = OCRService()
+        # Optional services only used for cropping/cleaning
+        self._roi_service = ROIExtractionService()
+        self._preprocess_service = PlatePreprocessService()
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
     def start(self) -> None:
-        """Start background detection thread."""
+        """Start the detection thread."""
         if self._running:
             return
 
@@ -99,7 +84,6 @@ class LPDControl:
     def stop(self) -> None:
         """Stop detection thread."""
         self._running = False
-
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
 
@@ -107,13 +91,13 @@ class LPDControl:
         return self._running
 
     # ------------------------------------------------------------------
-    # Background loop
+    # Internal loop
     # ------------------------------------------------------------------
     def _loop(self) -> None:
-        """Main inference loop."""
+        """Background loop for YOLO detection."""
         while self._running:
-            frame = self._camera_service.get_latest()
 
+            frame = self._camera_service.get_latest()
             if frame is None:
                 time.sleep(0.01)
                 continue
@@ -127,67 +111,78 @@ class LPDControl:
             time.sleep(0.001)
 
     # ------------------------------------------------------------------
-    # Detection Pipeline
+    # Pipeline (YOLO + ROI + preprocess)
     # ------------------------------------------------------------------
     def _run_pipeline(self, frame: ImageFrame) -> tuple[Any | None, Any]:
         """
-        ALPR pipeline:
-            Step 1 — YOLO detection (YoloDetectorService)
-            Step 2 — (Future) ROI extraction (ROIExtractionService)
-            Step 3 — (Future) Preprocessing (PlatePreprocessService)
-            Step 4 — (Future) OCR recognition (OCRService)
-            Step 5 — lightweight debug overlay
+        ALPR detection-only pipeline:
+            1 — YOLO detection
+            2 — ROI extraction (optional)
+            3 — Preprocessing (optional)
+            4 — Debug overlay
 
         Returns:
-            result_dict or None, processed_frame (numpy BGR)
+            (result_dict or None, processed_frame)
         """
 
         img = frame.data
         processed = img.copy()
 
-        # --- Step 1: YOLO detection ---
+        # ---- STEP 1 : YOLO detection ----
         detections = self._detector.detect(img)
         if not detections:
             return None, processed
 
-        x, y, w, h, conf = detections[0]  # highest confidence
+        x, y, w, h, conf = detections[0]  # take best detection
 
-        # --- Step 2: Future ALPR services ---
-        # roi = self._roi_service.extract(img, (x, y, w, h))
-        # plate_clean = self._preprocess_service.process(roi)
-        # text = self._ocr_service.read(plate_clean)
+        # ---- STEP 2 : ROI extraction (optional) ----
+        roi = self._roi_service.extract(img, (x, y, w, h))
 
-        # --- Step 3: Structured result ---
+        # ---- STEP 3 : Preprocessing (optional) ----
+        if roi is not None and roi.size > 0:
+            _ = self._preprocess_service.process(roi)
+
+        # ---- Build result ----
         result = {
             "bbox": (x, y, w, h),
             "confidence": conf,
             "timestamp": frame.timestamp,
-            # "plate_text": text,
         }
 
-        # --- Step 4: Debug overlay ---
-        cv2.rectangle(processed, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        # ---- Debug overlay ----
+        self._draw_overlay(processed, x, y, w, h, conf)
+
+        return result, processed
+
+    # ------------------------------------------------------------------
+    # Debug drawing helper
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _draw_overlay(image, x: int, y: int, w: int, h: int, conf: float) -> None:
+        """Draw YOLO bounding box + confidence."""
+
+        cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+        label = f"{conf:.2f}"
+        text_y = max(20, y - 5)
+
         cv2.putText(
-            processed,
-            f"{conf:.2f}",
-            (x, y - 5),
+            image,
+            label,
+            (x, text_y),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
             (0, 255, 0),
             2,
         )
 
-        return result, processed
-
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
     def get_latest_result(self) -> Optional[Any]:
-        """Return the latest structured ALPR result."""
         with self._lock:
             return self._latest_result
 
     def get_latest_frame(self) -> Optional[Any]:
-        """Return the latest processed debug frame."""
         with self._lock:
             return self._latest_frame_processed

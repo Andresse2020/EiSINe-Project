@@ -19,8 +19,12 @@ Example:
 
 from .camera_service import CameraService
 from .yolo_detector_service import YoloDetectorService
+from Software.Service.roi_extraction_service import ROIExtractionService
+from Software.Service.plate_preprocess_service import PlatePreprocessService
 
 __all__ = [
     "CameraService",
     "YoloDetectorService",
+    "ROIExtractionService",
+    "PlatePreprocessService",
 ]
