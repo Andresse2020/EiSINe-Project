@@ -202,7 +202,7 @@ raspberry-lpd/
 │
 ├── launch.sh                                # Startup script (source to load aliases)
 ├── setup.py                                 # Package configuration
-├── README.md                                # This file
+└── README.md                                # This file
 ```
 
 ### Directory Responsibilities
@@ -231,17 +231,21 @@ raspberry-lpd/
 git clone https://github.com/Andresse2020/EiSINe-Project
 cd EiSINe-Project
 
-# 2. Create virtual environment (recommended)
+# 2. Ensure pip is installed
+python3 -m ensurepip --upgrade
+python3 -m pip install --upgrade pip
+
+# 3. Create virtual environment (recommended)
 python3 -m venv venv
 source venv/bin/activate          # Linux/macOS
 # venv\Scripts\activate           # Windows
 
-# 3. Install dependencies
-pip install opencv-python
-pip install ultralytics             # YOLO
+# 4. Install dependencies
 pip install numpy
+pip install opencv-python
+pip install ultralytics           # YOLO
 
-# 4. Verify installation
+# 5. Verify installation
 python3 -c "import cv2; print('OpenCV:', cv2.__version__)"
 python3 -c "import ultralytics; print('YOLO: OK')"
 ```
@@ -350,18 +354,18 @@ CAMERA_HARDWARE_CONFIG = {
 
 ```bash
 # Method 1: Using launch script (loads aliases)
-cd /path/to/EiSINe-Project/Software
+cd EiSINe-Project/Software
 source launch.sh     # Once the launch.sh file is succefuly executed, you can run "run_app" and "show_video" in any directory.
 run_app              # Launch main detection application
 show_video           # Launch debug video display tool
 
 # Method 2: Direct Python execution
-cd /path/to/EiSINe-Project
+cd EiSINe-Project
 python3 -m Software.App.main
 python3 -m Software.Tools.debug_display
 
 # Method 3: From project root
-cd /path/to/EiSINe-Project
+cd EiSINe-Project
 python3 -m Software.App.main
 ```
 
@@ -372,6 +376,7 @@ The `launch.sh` script provides convenient aliases:
 ```bash
 #!/bin/bash
 # Load aliases into current shell
+cd EiSINe-Project/Software
 source launch.sh
 
 # Available commands:
@@ -384,12 +389,10 @@ show_video   # Runs the debug video display utility
 ### Expected Console Output
 
 ```
-[2024-02-05 14:32:10] Camera: OpenCVCamera[0] initializing...
-[2024-02-05 14:32:10] Camera: Opened successfully (640x480 @ 30fps)
-[2024-02-05 14:32:10] Camera Service: Background thread started
-[2024-02-05 14:32:10] LPD Control: Detection thread started
-[2024-02-05 14:32:11] Detection: Plate detected at (x=245, y=180, w=120, h=40) confidence=0.87
-[2024-02-05 14:32:11] Detection: Plate detected at (x=248, y=182, w=118, h=38) confidence=0.89
+🔍 [DebugDisplay] Starting viewer...
+📡 CameraService started.
+🧠 LPDControl started.
+
 ...
 
 Press 'q' to quit
@@ -407,13 +410,12 @@ Press 'q' to quit
 
 ```bash
 # Test camera driver
-python3 -m pytest Software/Tests/test_camera.py -v
+cd EiSINe-Project/Software
+python3 -m Software.Tests.test_camera
 
 # Test camera service
-python3 -m pytest Software/Tests/test_camera_service.py -v
-
-# Run all tests
-python3 -m pytest Software/Tests/ -v
+cd EiSINe-Project/Software
+python3 -m Software.Tests.test_camera_service
 ```
 
 ---
@@ -1005,7 +1007,7 @@ show_video      # Launches Software.Tools.debug_display
 ./launch.sh     # This won't work (aliases only exist in subshell)
 ```
 
-**Alternative:** You can add `source /path/to/raspberry-lpd/launch.sh` to your `~/.bashrc` to load aliases permanently.
+**Alternative:** You can add `source /path/to/EiSINe-Project/Software/launch.sh` to your `~/.bashrc` to load aliases permanently.
 
 ---
 
